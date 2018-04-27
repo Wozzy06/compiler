@@ -18,6 +18,7 @@ module Runic
        float
        identifier
        integer
+       ivar
        keyword
        linefeed
        operator
@@ -43,12 +44,11 @@ module Runic
         io << "comment"
       when :eof
         io << "EOF"
-      when :integer, :float
+      when :float, :identifier, :integer, :keyword
         value.inspect(io)
-      when :identifier
-        value.inspect(io)
-      when :keyword
-        value.inspect(io)
+      when :ivar
+        io << '@'
+        value.to_s(io)
       when :linefeed
         io << "LF"
       when :operator

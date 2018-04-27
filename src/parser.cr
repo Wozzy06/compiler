@@ -69,6 +69,13 @@ module Runic
           else
             raise SyntaxError.new("expected 'def' or 'end' but got '#{peek}'", peek.location)
           end
+        when :ivar
+          if node.attribute?("primitive")
+            raise SyntaxError.new("primitive types can't declare instance variables", peek.location)
+          end
+          ivar = consume
+          type = Type.new(consume_type(colon: true))
+          node.variables << AST::Variable.new(ivar.value, type, ivar.location)
         when :linefeed
           skip
         else
@@ -112,8 +119,8 @@ module Runic
       AST::Body.new(body, location)
     end
 
-    private def consume_type
-      consume if peek.value == ":"
+    private def consume_type(*, colon = false)
+      consume if colon || peek.value == ":"
       case type = expect(:identifier).value
       when "int"
         "i32"

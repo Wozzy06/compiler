@@ -173,8 +173,8 @@ module Runic
 
     def test_ifs
       node = assert_expression AST::If, "if test; end"
-      assert_empty node.as(AST::If).body
-      assert_nil node.as(AST::If).alternative
+      assert_empty node.body
+      assert_nil node.alternative
 
       node = assert_expression AST::If, <<-RUNIC
       if test
@@ -183,8 +183,8 @@ module Runic
         again()
       end
       RUNIC
-      assert_equal 3, node.as(AST::If).body.size
-      assert_nil node.as(AST::If).alternative
+      assert_equal 3, node.body.size
+      assert_nil node.alternative
 
       node = assert_expression AST::If, <<-RUNIC
       if a < 10 || b > 10
@@ -194,13 +194,13 @@ module Runic
         bar()
       end
       RUNIC
-      assert_equal 1, node.as(AST::If).body.size
-      assert_equal 2, node.as(AST::If).alternative.try(&.size)
+      assert_equal 1, node.body.size
+      assert_equal 2, node.alternative.try(&.size)
     end
 
     def test_unless
       node = assert_expression AST::Unless, "unless true; end"
-      assert_empty node.as(AST::Unless).body
+      assert_empty node.body
 
       node = assert_expression AST::Unless, <<-RUNIC
       unless a < 10 || b > 10
@@ -208,12 +208,12 @@ module Runic
         bar()
       end
       RUNIC
-      assert_equal 2, node.as(AST::Unless).body.size
+      assert_equal 2, node.body.size
     end
 
     def test_while
       node = assert_expression AST::While, "while true; end"
-      assert_empty node.as(AST::While).body
+      assert_empty node.body
 
       node = assert_expression AST::While, <<-RUNIC
       while a < 10 || b > 10
@@ -221,12 +221,12 @@ module Runic
         bar()
       end
       RUNIC
-      assert_equal 2, node.as(AST::While).body.size
+      assert_equal 2, node.body.size
     end
 
     def test_until
       node = assert_expression AST::Until, "until true; end"
-      assert_empty node.as(AST::Until).body
+      assert_empty node.body
 
       node = assert_expression AST::Until, <<-RUNIC
       until a < 10 || b > 10
@@ -234,15 +234,15 @@ module Runic
         bar()
       end
       RUNIC
-      assert_equal 2, node.as(AST::Until).body.size
+      assert_equal 2, node.body.size
     end
 
     def test_case
       node = assert_expression AST::Case, "case a; when 1; end"
-      assert_nil node.as(AST::Case).alternative
-      assert_equal 1, node.as(AST::Case).cases.size
-      assert_equal 1, node.as(AST::Case).cases.first.conditions.size
-      assert_empty node.as(AST::Case).cases.first.body
+      assert_nil node.alternative
+      assert_equal 1, node.cases.size
+      assert_equal 1, node.cases.first.conditions.size
+      assert_empty node.cases.first.body
 
       node = assert_expression AST::Case, <<-RUNIC
       case foo(a, b + 10)
@@ -255,18 +255,19 @@ module Runic
         bar()
       end
       RUNIC
-      assert node.as(AST::Case).alternative
-      assert_equal 1, node.as(AST::Case).alternative.try(&.size)
-      assert_equal 2, node.as(AST::Case).cases.size
-      assert_equal 3, node.as(AST::Case).cases[1].conditions.size
+      assert node.alternative
+      assert_equal 1, node.alternative.try(&.size)
+      assert_equal 2, node.cases.size
+      assert_equal 3, node.cases[1].conditions.size
 
       assert_raises(SyntaxError) { parser("case a; end").next }
     end
 
     def test_struct
-      node = assert_expression(AST::Struct, "#[primitive]\nstruct int32\nend").as(AST::Struct)
+      node = assert_expression(AST::Struct, "#[primitive]\nstruct int32\nend")
       assert_equal "int32", node.name
       assert_equal ["primitive"], node.attributes
+      assert_empty node.variables
       assert_empty node.methods
       assert_empty node.prototypes
       assert_empty node.documentation
@@ -274,20 +275,19 @@ module Runic
     end
 
     def test_struct_documentation_and_attributes
-      source = <<-RUNIC
+      node = assert_expression AST::Struct, <<-RUNIC
       # Docs for the `bool` primitive type.
       #[primitive]
       struct bool
       end
       RUNIC
-      node = assert_expression(AST::Struct, source).as(AST::Struct)
       assert_equal "bool", node.name
       assert_equal ["primitive"], node.attributes
       assert_equal "Docs for the `bool` primitive type.", node.documentation
     end
 
     def test_struct_methods
-      source =  <<-RUNIC
+      node = assert_expression AST::Struct, <<-RUNIC
       #[primitive]
       struct int64
         def add(other : int64)
@@ -299,16 +299,34 @@ module Runic
         end
       end
       RUNIC
-      node = assert_expression(AST::Struct, source).as(AST::Struct)
       assert_equal 2, node.methods.size
       assert_equal ["add", "sub"], node.methods.map(&.name).sort
       assert_empty node.prototypes # populated by semantic analysis
     end
 
-    private def assert_expression(klass, source, file = __FILE__, line = __LINE__)
+    def test_struct_variables
+      node = assert_expression AST::Struct, <<-RUNIC
+      struct Time
+        @seconds : int64
+        @nanoseconds : int32
+        @offset : int16
+      end
+      RUNIC
+      assert_empty node.attributes
+      assert_equal 3, node.variables.size
+      assert_equal ["seconds", "nanoseconds", "offset"], node.variables.map(&.name)
+      assert_equal ["int64", "int32", "int16"], node.variables.map(&.type.name)
+
+      ex = assert_raises(SyntaxError) do
+        parse_all("#[primitive]\nstruct int32\n@foo : int32\nend")
+      end
+      assert_match "primitive types can't declare instance variables", ex.message
+    end
+
+    def assert_expression(klass : T.class, source, file = __FILE__, line = __LINE__) : T forall T
       node = parser(source).next
-      assert klass === node, -> { "expected #{klass} but got #{node.class}" }, file, line
-      node
+      assert T === node, -> { "expected #{T} but got #{node.class}" }, file, line
+      node.as(T)
     end
 
     private def assert_type(expected, source, file = __FILE__, line = __LINE__)
